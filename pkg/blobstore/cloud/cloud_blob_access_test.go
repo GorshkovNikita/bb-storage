@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	remoteexecution "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 
 	"gocloud.dev/blob/memblob"
 )
@@ -23,14 +24,14 @@ func TestCloudBlobAccessGet(t *testing.T) {
 	ctx := context.Background()
 
 	hello := []byte("Hello world")
-	blobDigest := digest.MustNewDigest("default", "64ec88ca00b268e5ba1a35678a1b5316d212f4f366b2477232534a8aeca37f3c", 11)
+	blobDigest := digest.MustNewDigest("default", remoteexecution.DigestFunction_SHA256, "64ec88ca00b268e5ba1a35678a1b5316d212f4f366b2477232534a8aeca37f3c", 11)
 	bucketKey := blobDigest.GetKey(digest.KeyWithoutInstance)
 
 	t.Run("Success", func(t *testing.T) {
 		bucket := memblob.OpenBucket(nil)
 		defer bucket.Close()
 		require.NoError(t, bucket.WriteAll(ctx, bucketKey, hello, nil))
-		blobAccess := cloud.NewCloudBlobAccess(bucket, "", blobstore.CASReadBufferFactory, digest.KeyWithoutInstance, nil)
+		blobAccess := cloud.NewCloudBlobAccess(bucket, "", blobstore.CASReadBufferFactory, digest.KeyWithoutInstance, nil, nil)
 
 		data, err := blobAccess.Get(ctx, blobDigest).ToByteSlice(100)
 		require.NoError(t, err)
@@ -40,7 +41,7 @@ func TestCloudBlobAccessGet(t *testing.T) {
 	t.Run("NotFound", func(t *testing.T) {
 		bucket := memblob.OpenBucket(nil)
 		defer bucket.Close()
-		blobAccess := cloud.NewCloudBlobAccess(bucket, "", blobstore.CASReadBufferFactory, digest.KeyWithoutInstance, nil)
+		blobAccess := cloud.NewCloudBlobAccess(bucket, "", blobstore.CASReadBufferFactory, digest.KeyWithoutInstance, nil, nil)
 
 		_, err := blobAccess.Get(ctx, blobDigest).ToByteSlice(100)
 		require.Equal(t, codes.NotFound, status.Code(err))
@@ -50,7 +51,7 @@ func TestCloudBlobAccessGet(t *testing.T) {
 		bucket := memblob.OpenBucket(nil)
 		defer bucket.Close()
 		require.NoError(t, bucket.WriteAll(ctx, bucketKey, []byte("HELLO WORLD"), nil))
-		blobAccess := cloud.NewCloudBlobAccess(bucket, "", blobstore.CASReadBufferFactory, digest.KeyWithoutInstance, nil)
+		blobAccess := cloud.NewCloudBlobAccess(bucket, "", blobstore.CASReadBufferFactory, digest.KeyWithoutInstance, nil, nil)
 
 		// Precondition to validate the above code: key exists before we run .Get
 		existsBefore, err := bucket.Exists(ctx, bucketKey)
@@ -71,13 +72,13 @@ func TestCloudBlobAccessPut(t *testing.T) {
 	ctx := context.Background()
 
 	hello := []byte("Hello world")
-	blobDigest := digest.MustNewDigest("default", "64ec88ca00b268e5ba1a35678a1b5316d212f4f366b2477232534a8aeca37f3c", 11)
+	blobDigest := digest.MustNewDigest("default", remoteexecution.DigestFunction_SHA256, "64ec88ca00b268e5ba1a35678a1b5316d212f4f366b2477232534a8aeca37f3c", 11)
 	bucketKey := blobDigest.GetKey(digest.KeyWithoutInstance)
 
 	t.Run("Success", func(t *testing.T) {
 		bucket := memblob.OpenBucket(nil)
 		defer bucket.Close()
-		blobAccess := cloud.NewCloudBlobAccess(bucket, "", blobstore.CASReadBufferFactory, digest.KeyWithoutInstance, nil)
+		blobAccess := cloud.NewCloudBlobAccess(bucket, "", blobstore.CASReadBufferFactory, digest.KeyWithoutInstance, nil, nil)
 
 		require.NoError(t, blobAccess.Put(ctx, blobDigest, buffer.NewValidatedBufferFromByteSlice(hello)))
 		data, err := bucket.ReadAll(ctx, bucketKey)
@@ -90,8 +91,8 @@ func TestCloudBlobAccessFindMissing(t *testing.T) {
 	ctx := context.Background()
 
 	hello := []byte("Hello world")
-	helloDigest := digest.MustNewDigest("default", "64ec88ca00b268e5ba1a35678a1b5316d212f4f366b2477232534a8aeca37f3c", 11)
-	missingDigest := digest.MustNewDigest("default", "deadbeef00b268e5ba1a35678a1b5316d212f4f366b2477232534a8aeca37f3c", 11)
+	helloDigest := digest.MustNewDigest("default", remoteexecution.DigestFunction_SHA256, "64ec88ca00b268e5ba1a35678a1b5316d212f4f366b2477232534a8aeca37f3c", 11)
+	missingDigest := digest.MustNewDigest("default", remoteexecution.DigestFunction_SHA256, "deadbeef00b268e5ba1a35678a1b5316d212f4f366b2477232534a8aeca37f3c", 11)
 	allDigests := digest.NewSetBuilder().Add(helloDigest).Add(missingDigest).Build()
 	helloKey := helloDigest.GetKey(digest.KeyWithoutInstance)
 
@@ -99,7 +100,7 @@ func TestCloudBlobAccessFindMissing(t *testing.T) {
 		bucket := memblob.OpenBucket(nil)
 		defer bucket.Close()
 		require.NoError(t, bucket.WriteAll(ctx, helloKey, hello, nil))
-		blobAccess := cloud.NewCloudBlobAccess(bucket, "", blobstore.CASReadBufferFactory, digest.KeyWithoutInstance, nil)
+		blobAccess := cloud.NewCloudBlobAccess(bucket, "", blobstore.CASReadBufferFactory, digest.KeyWithoutInstance, nil, nil)
 
 		missing, err := blobAccess.FindMissing(ctx, allDigests)
 		require.NoError(t, err)

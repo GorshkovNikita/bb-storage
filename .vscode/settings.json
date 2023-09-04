@@ -1,0 +1,5 @@
+{
+    "bazel.buildifierExecutable": "/Users/gorshkovna/go/buildifier",
+    "bazel.buildifierFixOnFormat": true,
+    "bazel.enableCodeLens": true
+}
