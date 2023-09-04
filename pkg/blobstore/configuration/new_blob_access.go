@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/buildbarn/bb-storage/pkg/blobstore"
+	"github.com/buildbarn/bb-storage/pkg/blobstore/cloud"
 	"github.com/buildbarn/bb-storage/pkg/blobstore/local"
 	"github.com/buildbarn/bb-storage/pkg/blobstore/mirrored"
 	"github.com/buildbarn/bb-storage/pkg/blobstore/readcaching"
@@ -16,6 +17,7 @@ import (
 	"github.com/buildbarn/bb-storage/pkg/blobstore/sharding"
 	"github.com/buildbarn/bb-storage/pkg/blockdevice"
 	"github.com/buildbarn/bb-storage/pkg/clock"
+	"github.com/buildbarn/bb-storage/pkg/cloud/aws"
 	"github.com/buildbarn/bb-storage/pkg/digest"
 	"github.com/buildbarn/bb-storage/pkg/eviction"
 	"github.com/buildbarn/bb-storage/pkg/filesystem"
@@ -29,6 +31,9 @@ import (
 	"github.com/fxtlabs/primes"
 	"github.com/go-redis/redis/extra/redisotel"
 	"github.com/go-redis/redis/v8"
+
+	"gocloud.dev/blob/s3blob"
+    "github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -71,6 +76,30 @@ func (nc *simpleNestedBlobAccessCreator) newNestedBlobAccessBare(configuration *
 	readBufferFactory := creator.GetReadBufferFactory()
 	storageTypeName := creator.GetStorageTypeName()
 	switch backend := configuration.Backend.(type) {
+	case *pb.BlobAccessConfiguration_Cloud:
+		digestKeyFormat := creator.GetBaseDigestKeyFormat()
+		bckendConfig := backend.Cloud.S3
+		sess, err := aws.NewConfigFromConfiguration(bckendConfig.AwsSession, "CloudBlobAccess")
+		if err != nil {
+			return BlobAccessInfo{}, "", util.StatusWrap(err, "Failed to create AWS session")
+		}
+		ctx := context.Background()
+		client := s3.NewFromConfig(sess)
+		bucket, err := s3blob.OpenBucketV2(ctx, client, bckendConfig.Bucket, nil)
+		if err != nil {
+			return BlobAccessInfo{}, "", err
+		}
+		var minRefreshAge time.Duration
+		if bckendConfig.MinimumRefreshAge != nil {
+			if err := bckendConfig.MinimumRefreshAge.CheckValid(); err != nil {
+				return BlobAccessInfo{}, "", util.StatusWrap(err, "Failed to obtain S3 refresh age")
+			}
+			minRefreshAge = bckendConfig.MinimumRefreshAge.AsDuration()
+		}
+		return BlobAccessInfo{
+			BlobAccess:      cloud.NewCloudBlobAccess(bucket, backend.Cloud.KeyPrefix, readBufferFactory, digestKeyFormat, cloud.NewS3LRURefreshingBeforeCopyFunc(minRefreshAge, clock.SystemClock), creator.GetDefaultCapabilitiesProvider()),
+			DigestKeyFormat: digestKeyFormat,
+		}, "s3", nil
 	case *pb.BlobAccessConfiguration_Error:
 		return BlobAccessInfo{
 			BlobAccess:      blobstore.NewErrorBlobAccess(status.ErrorProto(backend.Error)),

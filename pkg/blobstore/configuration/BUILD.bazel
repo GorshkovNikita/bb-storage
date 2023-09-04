@@ -21,6 +21,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/blobstore",
+        "//pkg/blobstore/cloud",
         "//pkg/blobstore/completenesschecking",
         "//pkg/blobstore/grpcclients",
         "//pkg/blobstore/local",
@@ -54,5 +55,8 @@ go_library(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_x_sync//semaphore",
+        "@dev_gocloud//blob",
+        "@dev_gocloud//blob/s3blob",
+        "@dev_gocloud//blob/memblob",
     ],
 )
